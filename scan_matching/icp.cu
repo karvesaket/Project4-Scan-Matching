@@ -1,9 +1,9 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include "common.h"
-#include "mlp.h"
+#include "icp.h"
 
-namespace CharacterRecognition {
+namespace ScanMatching {
     using Common::PerformanceTimer;
     PerformanceTimer& timer()
     {

@@ -7,7 +7,7 @@
  */
 
 #include <cstdio>
-#include <scan_matching/mlp.h>
+#include <scan_matching/icp.h>
 #include <scan_matching/common.h>
 #include "testing_helpers.hpp"
 
