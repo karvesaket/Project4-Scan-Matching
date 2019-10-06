@@ -1,7 +1,7 @@
-CUDA Character Recognition
+CUDA Scan Matching
 ======================
 
-**University of Pennsylvania, CIS 565: GPU Programming and Architecture, Project 2**
+**University of Pennsylvania, CIS 565: GPU Programming and Architecture, Project 4**
 
 * (TODO) YOUR NAME HERE
   * (TODO) [LinkedIn](), [personal website](), [twitter](), etc.
