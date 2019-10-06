@@ -1,8 +1,8 @@
 set(SOURCE_FILES
     "common.h"
     "common.cu"
-    "icp.h"
-    "icp.cu"
+	"cpu.h"
+	"cpu.cu"
     )
 
 cuda_add_library(scan_matching
