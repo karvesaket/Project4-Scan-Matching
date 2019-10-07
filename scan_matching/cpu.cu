@@ -205,7 +205,7 @@ namespace ScanMatching {
 
 		//Apply the rotation matrix to current X
 		float* newX = (float*)malloc(numX * sizeof(float));
-		multiplyMatrix(x, R, newX, numX / 3, 3, 3);
+		multiplyMatrix(x, R, newX, numX/3 , 3, 3);
 
 		//Add translation to every vertes
 		addTranslation(newX, translation, numX / 3);

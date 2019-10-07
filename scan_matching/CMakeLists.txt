@@ -6,6 +6,7 @@ set(SOURCE_FILES
 	"naivegpu.h"
 	"naivegpu.cu"
 	"svd3.h"
+	"svd3_cuda.h"
     )
 
 cuda_add_library(scan_matching

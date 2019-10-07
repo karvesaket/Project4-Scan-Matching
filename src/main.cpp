@@ -28,6 +28,9 @@
 #define UNIFORM_GRID 1
 #define COHERENT_GRID 0
 
+const int CPU = 1;
+const int NAIVE_GPU = 0;
+
 // LOOK-1.2 - change this to adjust particle count in the simulation
 int N_FOR_VIS = 0;
 const float DT = 0.2f;
@@ -273,9 +276,14 @@ void initShaders(GLuint * program) {
     cudaGLMapBufferObject((void**)&dptrVertVelocities, boidVBO_velocities);
 
     // execute the kernel
-	ScanMatching::initScan(numX);
-	ScanMatching::match(x, y, numX, numY);
-
+	if (CPU) {
+		ScanMatching::initScan(numX);
+		ScanMatching::match(x, y, numX, numY);
+	}
+	else {
+		NaiveGPU::initScan(numX);
+		NaiveGPU::match(x, y, numX, numY);
+	}
 	Boids::copyToDevice(x, y, numX, numY);
 
     #if VISUALIZE
