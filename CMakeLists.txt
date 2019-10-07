@@ -83,10 +83,14 @@ source_group(Headers FILES ${headers})
 source_group(Sources FILES ${sources})
 
 include_directories(.)
+link_directories(${CUDA_TOOLKIT_ROOT_DIR}/lib/x64)
 add_subdirectory(scan_matching)
 
 cuda_add_executable(${CMAKE_PROJECT_NAME} ${sources} ${headers})
-target_link_libraries(${CMAKE_PROJECT_NAME} scan_matching ${LIBRARIES})
+target_link_libraries(${CMAKE_PROJECT_NAME} 
+		scan_matching
+		cublas
+		 ${LIBRARIES})
 
 add_custom_command(
     TARGET ${CMAKE_PROJECT_NAME}
