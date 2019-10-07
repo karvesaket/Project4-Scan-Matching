@@ -22,7 +22,7 @@ endif()
 ########################################
 # CUDA Setup
 ########################################
-find_package(CUDA 10 REQUIRED)
+find_package(CUDA 10.0 REQUIRED)
 include(${CMAKE_MODULE_PATH}/CUDAComputesList.cmake)
 
 list(APPEND CUDA_NVCC_FLAGS ${CUDA_GENERATE_CODE})
@@ -62,12 +62,18 @@ find_package(GLM REQUIRED)
 include_directories(${GLM_INCLUDE_DIRS})
 
 set(headers
-    src/testing_helpers.hpp
-	src/svd3.h
+    src/cudaMat4.hpp
+    src/glslUtility.hpp
+    src/kernel.h
+    src/main.hpp
+    src/utilityCore.hpp
     )
 
 set(sources
+    src/glslUtility.cpp
+    src/kernel.cu
     src/main.cpp
+    src/utilityCore.cpp
     )
 
 list(SORT headers)
@@ -81,3 +87,11 @@ add_subdirectory(scan_matching)
 
 cuda_add_executable(${CMAKE_PROJECT_NAME} ${sources} ${headers})
 target_link_libraries(${CMAKE_PROJECT_NAME} scan_matching ${LIBRARIES})
+
+add_custom_command(
+    TARGET ${CMAKE_PROJECT_NAME}
+    PRE_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        ${CMAKE_SOURCE_DIR}/shaders
+        ${CMAKE_BINARY_DIR}/shaders
+    )
