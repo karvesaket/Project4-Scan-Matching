@@ -15,6 +15,7 @@
 
 #include <scan_matching/cpu.h>
 #include <scan_matching/naivegpu.h>
+#include <scan_matching/kdtreegpu.h>
 #include <scan_matching/common.h>
 #include "testing_helpers.hpp"
 #include "main.hpp"
@@ -28,8 +29,9 @@
 #define UNIFORM_GRID 1
 #define COHERENT_GRID 0
 
-const int CPU = 1;
+const int CPU = 0;
 const int NAIVE_GPU = 0;
+const int KDTREE_GPU = 1;
 
 // LOOK-1.2 - change this to adjust particle count in the simulation
 int N_FOR_VIS = 0;
@@ -190,6 +192,9 @@ bool init(int argc, char **argv, float* x, float* y, int numX, int numY) {
 
   // Initialize N-body simulation
   Boids::initSimulation(x, y, numX, numY);
+  if (KDTREE_GPU == 1) {
+	  KDTreeGPU::buildTree(y, numY);
+  }
 
   updateCamera();
 
@@ -283,6 +288,10 @@ void initShaders(GLuint * program) {
 	else if(NAIVE_GPU == 1) {
 		NaiveGPU::initScan(numX);
 		NaiveGPU::match(x, y, numX, numY);
+	}
+	else if (KDTREE_GPU == 1) {
+		KDTreeGPU::initScan(numX);
+		KDTreeGPU::match(x, y, numX, numY);
 	}
 	Boids::copyToDevice(x, y, numX, numY);
 
