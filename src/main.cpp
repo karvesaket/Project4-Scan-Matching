@@ -28,8 +28,8 @@
 #define UNIFORM_GRID 1
 #define COHERENT_GRID 0
 
-const int CPU = 1;
-const int NAIVE_GPU = 0;
+const int CPU = 0;
+const int NAIVE_GPU = 1;
 
 // LOOK-1.2 - change this to adjust particle count in the simulation
 int N_FOR_VIS = 0;
@@ -276,11 +276,11 @@ void initShaders(GLuint * program) {
     cudaGLMapBufferObject((void**)&dptrVertVelocities, boidVBO_velocities);
 
     // execute the kernel
-	if (CPU) {
+	if (CPU == 1) {
 		ScanMatching::initScan(numX);
 		ScanMatching::match(x, y, numX, numY);
 	}
-	else {
+	else if(NAIVE_GPU == 1) {
 		NaiveGPU::initScan(numX);
 		NaiveGPU::match(x, y, numX, numY);
 	}
@@ -301,7 +301,7 @@ void initShaders(GLuint * program) {
 
     Boids::unitTest(); // LOOK-1.2 We run some basic example code to make sure
                        // your CUDA development setup is ready to go.
-
+	int iter = 0;
     while (!glfwWindowShouldClose(window)) {
       glfwPollEvents();
 
@@ -313,7 +313,8 @@ void initShaders(GLuint * program) {
         timebase = time;
         frame = 0;
       }
-
+	  iter++;
+	  if (iter > 100) break;
       runCUDA(x, y, numX, numY);
 
       std::ostringstream ss;

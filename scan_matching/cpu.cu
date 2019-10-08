@@ -135,6 +135,12 @@ namespace ScanMatching {
 		float* x_corr_tr = (float*)malloc(numX * sizeof(float));
 		transpose(x_corr, x_corr_tr, numX / 3, 3);
 
+		printMatrix(x, 10, 3);
+
+		printMatrix(x_corr, 10, 3);
+
+		printMatrix(x_corr_tr, 3, 10);
+
 		std::cout << "Multiplying tfor SVD.." << std::endl;
 		//Compute C_corr_tr x X
 		float* to_svd = (float*)malloc(3 * 3 * sizeof(float));
@@ -178,6 +184,9 @@ namespace ScanMatching {
 		printMatrix(R, 3, 3);
 		std::cout << std::endl;
 
+		float* R_tr = (float*)malloc(9 * sizeof(float));
+		transpose(R, R_tr, 3, 3);
+
 		//Compute R x X_mean
 		float* inter = (float*)malloc(3 * 1 * sizeof(float));
 		float x_mean_arr[] = { x_mean.x, x_mean.y, x_mean.z };
@@ -203,9 +212,11 @@ namespace ScanMatching {
 		subtractMatrices(y_mean_arr, inter, translation, 1, 3);
 		std::cout << "Translation matrix : " << translation[0] << " " << translation[1] << " " << translation[2] << std::endl;
 
+		
+
 		//Apply the rotation matrix to current X
 		float* newX = (float*)malloc(numX * sizeof(float));
-		multiplyMatrix(x, R, newX, numX/3 , 3, 3);
+		multiplyMatrix(x, R_tr, newX, numX/3 , 3, 3);
 
 		//Add translation to every vertes
 		addTranslation(newX, translation, numX / 3);

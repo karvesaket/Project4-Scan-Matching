@@ -9,6 +9,9 @@
 #include <glm/glm.hpp>
 #include <cublas_v2.h>
 #include "svd3_cuda.h"
+#include <thrust\host_vector.h>
+#include <thrust\device_vector.h>
+#include <thrust\reduce.h>
 
 #define checkCUDAErrorWithLine(msg) checkCUDAError(msg, __LINE__)
 
@@ -47,11 +50,13 @@ __global__ void transpose(float* arr, float* arrTrans, int m, int n) {
 	arrTrans[m*j + i] = arr[n*i + j];
 }
 
+
 // Multiply the arrays A and B on GPU and save the result in C
 // C(m,n) = A(m,k) * B(k,n)
 void gpu_blas_mmul(cublasHandle_t &handle, const float *A, const float *B, float *C, const int m, const int k, const int n) {
 	int lda = m, ldb = k, ldc = m;
 	 float alf = 1;
+	 
 	const float bet = 0;
 	const float *alpha = &alf;
 	const float *beta = &bet;
@@ -67,6 +72,33 @@ __global__ void matrix_subtraction(float* A, float* B, float* C, int m, int n) {
 	}
 	C[index] = A[index] - B[index];
 }
+
+__global__ void kernMatrixMultiply(float *dev_A, float *dev_B, float *dev_C, int m, int n, int k) {
+
+	int row = blockIdx.y * blockDim.y + threadIdx.y;
+	int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+	double sum = 0;
+	if (col < k && row < m)
+	{
+		for (int i = 0; i < n; i++)
+			sum += dev_A[row * n + i] * dev_B[i * k + col];
+		dev_C[row * k + col] = sum;
+	}
+}
+
+// A - m x n || B - n x p and returns C - m x p
+void multiplyMatrixCPU(float* A, float* B, float* C, int m, int n, int p) {
+	for (int i = 0; i < m; i++) {
+		for (int j = 0; j < p; j++) {
+			C[i*p + j] = 0;
+			for (int k = 0; k < n; k++) {
+				C[i*p + j] += (A[i*n + k] * B[k*p + j]);
+			}
+		}
+	}
+}
+
 
 __global__ void addTranslation(float* A, float* trans, int num) {
 	const int index = blockIdx.x * blockDim.x + threadIdx.x;
@@ -102,7 +134,7 @@ __global__ void meanCenter(float* arr, int num, float mx, float my, float mz) {
 	arr[index * 3 + 2] -= mz;
 }
 
-__global__ void setValueOnDevice(float* device_var, int val) {
+__global__ void setValueOnDevice(float* device_var, float val) {
 	*device_var = val;
 }
 
@@ -111,6 +143,10 @@ __global__ void get_svd(float* input, float* u, float* s, float* v) {
 		u[0], u[1], u[2], u[3], u[4], u[5], u[6], u[7], u[8],
 		s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7], s[8],
 		v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8]);
+}
+
+__global__ void divide_sum_to_mean(float* sum, int num) {
+	(*sum) = (*sum) / num;
 }
 
 void getArraySum(int n, float* input, float* sum) {
@@ -176,6 +212,9 @@ namespace NaiveGPU {
 		dim3 numBlocks2((3 * 3 + blockSize - 1) / blockSize);
 		dim3 numBlocks3((3 * 1 + blockSize - 1) / blockSize);
 
+		dim3 dimBlock(16, 16);
+		dim3 dimGrid;
+
 		//Copy data to GPU
 		cudaMalloc((void**)&dev_x, numX * sizeof(float));
 		checkCUDAErrorWithLine("cudaMalloc dev_x failed!");
@@ -185,6 +224,9 @@ namespace NaiveGPU {
 		checkCUDAErrorWithLine("cudaMalloc dev_y failed!");
 		cudaMemcpy(dev_y, y, sizeof(float) * numY, cudaMemcpyHostToDevice);
 
+		std::cout << "Computing correspondence gpu..." << std::endl;
+		//Find correspondence
+		std::cout << "x[0] = " << x[0] << " x[1] = " << x[1] << " x[2] = " << x[2] << std::endl;
 		//Find Correspondence
 		findCorrespondence << <numBlocks, blockSize >> >(dev_x, numX, dev_y, numY, dev_x_corr);
 
@@ -199,74 +241,121 @@ namespace NaiveGPU {
 		checkCUDAErrorWithLine("cudaMalloc dev_x failed!");
 		transpose << <numBlocks1, blockSize >> >(dev_x_corr, dev_x_corr_tr, eachX, 3);
 
-		//Mean-center x
-		float* meanX;
-		cudaMalloc((void**)&meanX, sizeof(float));
-		checkCUDAErrorWithLine("cudaMalloc sum failed!");
-		getArraySum(eachX, dev_x_tr, meanX);
+		std::cout << "Mean Centering x..." << std::endl;
+		float meanX;
+		meanX = thrust::reduce(thrust::device, dev_x_tr, dev_x_tr + eachX, 0.0f);
+		meanX /= eachX;
+		
+		float meanY;
+		meanY = thrust::reduce(thrust::device, dev_x_tr + eachX, dev_x_tr + (2 * eachX), 0.0f);
+		meanY /= eachX;
+		
+		float meanZ;
+		meanZ = thrust::reduce(thrust::device, dev_x_tr + (2 * eachX), dev_x_tr + numX, 0.0f);
+		meanZ /= eachX;
+		
 
-		float* meanY;
-		cudaMalloc((void**)&meanY, sizeof(float));
-		checkCUDAErrorWithLine("cudaMalloc sum failed!");
-		getArraySum(eachX, dev_x_tr + eachX, meanY);
-
-		float* meanZ;
-		cudaMalloc((void**)&meanZ, sizeof(float));
-		checkCUDAErrorWithLine("cudaMalloc sum failed!");
-		getArraySum(eachX, dev_x_tr + (eachX * 2), meanZ);
-
+		std::cout << "xm[0] = " << meanX << " xm[1] = " << meanY << " xm[2] = " << meanZ << std::endl;
+		
 		cudaFree(dev_x_tr);
 
+		std::cout << "Mean Centering  x_corr..." << std::endl;
 		//Mean-center x_corr
-		float* meanXC;
-		cudaMalloc((void**)&meanXC, sizeof(float));
-		checkCUDAErrorWithLine("cudaMalloc sum failed!");
-		getArraySum(eachX, dev_x_corr_tr, meanXC);
-
-		float* meanYC;
-		cudaMalloc((void**)&meanYC, sizeof(float));
-		checkCUDAErrorWithLine("cudaMalloc sum failed!");
-		getArraySum(eachX, dev_x_corr_tr + eachX, meanYC);
-
-		float* meanZC;
-		cudaMalloc((void**)&meanZC, sizeof(float));
-		checkCUDAErrorWithLine("cudaMalloc sum failed!");
-		getArraySum(eachX, dev_x_corr_tr + (eachX * 2), meanZC);
+		float meanXC;
+		meanXC = thrust::reduce(thrust::device, dev_x_corr_tr, dev_x_corr_tr + eachX, 0.0f);
+		meanXC /= eachX;
 		
+		float meanYC;
+		meanYC = thrust::reduce(thrust::device, dev_x_corr_tr + eachX, dev_x_corr_tr + (2 * eachX), 0.0f);
+		meanYC /= eachX;
+		
+		float meanZC;
+		meanZC = thrust::reduce(thrust::device, dev_x_corr_tr + (2 * eachX), dev_x_corr_tr + numX, 0.0f);
+		meanZC /= eachX;
+		
+
+		std::cout << "xm[0] = " << meanXC << " xm[1] = " << meanYC << " xm[2] = " << meanZC << std::endl;
+
 		cudaFree(dev_x_corr_tr);
 
-		meanCenter <<<numBlocks, blockSize >>>(dev_x, eachX, *meanX, *meanY, *meanZ);
-		meanCenter <<<numBlocks, blockSize >>>(dev_x_corr, eachX, *meanXC, *meanYC, *meanZC);
+		std::cout << "x..." << std::endl;
+		meanCenter <<<numBlocks, blockSize >>>(dev_x, eachX, meanX, meanY, meanZ);
+		std::cout << "x_corr..." << std::endl;
+		meanCenter <<<numBlocks, blockSize >>>(dev_x_corr, eachX, meanXC, meanYC, meanZC);
 
+		std::cout << "Computing input to SVD..." << std::endl;
 		//Multiply x_corr_tr and x to get input to SVD
 		cudaMalloc((void**)&dev_x_corr_tr, numX * sizeof(float));
 		checkCUDAErrorWithLine("cudaMalloc dev_x failed!");
 		transpose << <numBlocks1, blockSize >> > (dev_x_corr, dev_x_corr_tr, eachX, 3);
 
+		float* x_cpu = (float*)malloc(numX * sizeof(float));
+		cudaMemcpy(x_cpu, dev_x, sizeof(float) * numX, cudaMemcpyDeviceToHost);
+		std::cout << "X : \n";
+
+
+		float* y_tr_cpu = (float*)malloc(numX * sizeof(float));
+		cudaMemcpy(y_tr_cpu, dev_x_corr_tr, sizeof(float) * numX, cudaMemcpyDeviceToHost);
+		
+
 		float* dev_to_svd;
 		cudaMalloc((void**)&dev_to_svd, 3 * 3 * sizeof(float));
 		checkCUDAErrorWithLine("cudaMalloc dev_to_svd failed!");
 
+		float* to_svd = (float*)malloc(3 * 3 * sizeof(float));
+
+		//multiplyMatrixCPU(y_tr_cpu, x_cpu, to_svd, 3, eachX, 3);
+
+		//cudaMemcpy(dev_to_svd, to_svd, sizeof(float) * 9, cudaMemcpyHostToDevice);
+
+		dimGrid.x = (3 + dimBlock.x - 1) / dimBlock.x;
+		dimGrid.y = (3 + dimBlock.y - 1) / dimBlock.y;
+		kernMatrixMultiply << <dimGrid, dimBlock >> > (dev_x_corr_tr, dev_x, dev_to_svd, 3, eachX, 3);
+
 		// Create a handle for CUBLAS
 		cublasHandle_t handle;
 		cublasCreate(&handle);
-		gpu_blas_mmul(handle, dev_x_corr_tr, dev_x, dev_to_svd, 3, eachX, 3);
+		//gpu_blas_mmul(handle, dev_x_corr_tr, dev_x, dev_to_svd, 3, eachX, 3);
+		//multiplyMatrix<<<numBlocks2, blockSize>> > (dev_x_corr_tr, dev_x, dev_to_svd, 3, eachX, 3);
 
+		
+		cudaMemcpy(to_svd, dev_to_svd, sizeof(float) * 9, cudaMemcpyDeviceToHost);
+		std::cout << "Input to SVD : \n";
+		printMatrix(to_svd, 3, 3);
+		std::cout << std::endl;
+
+		std::cout << "SVD..." << std::endl;
 		//Find SVD - U, V, S
 		float* dev_svd_u;
 		cudaMalloc((void**)&dev_svd_u, 3 * 3 * sizeof(float));
+		cudaMemset(dev_svd_u, 0.0f, 3 * 3 * sizeof(float));
 		checkCUDAErrorWithLine("cudaMalloc dev_to_svd failed!");
 
 		float* dev_svd_s;
 		cudaMalloc((void**)&dev_svd_s, 3 * 3 * sizeof(float));
+		cudaMemset(dev_svd_s, 0.0f, 3 * 3 * sizeof(float));
 		checkCUDAErrorWithLine("cudaMalloc dev_to_svd failed!");
 
 		float* dev_svd_v;
 		cudaMalloc((void**)&dev_svd_v, 3 * 3 * sizeof(float));
+		cudaMemset(dev_svd_v, 0.0f, 3 * 3 * sizeof(float));
 		checkCUDAErrorWithLine("cudaMalloc dev_to_svd failed!");
 
 		get_svd << <1, 1 >> > (dev_to_svd, dev_svd_u, dev_svd_s, dev_svd_v);
 
+		float* u = (float*)malloc(3 * 3 * sizeof(float));
+		cudaMemcpy(u, dev_svd_u, sizeof(float) * 9, cudaMemcpyDeviceToHost);
+		std::cout << "U : \n";
+		printMatrix(u, 3, 3);
+		std::cout << std::endl;
+
+		float* v = (float*)malloc(3 * 3 * sizeof(float));
+		cudaMemcpy(v, dev_svd_v, sizeof(float) * 9, cudaMemcpyDeviceToHost);
+		std::cout << "V : \n";
+		printMatrix(v, 3, 3);
+		std::cout << std::endl;
+
+		std::cout << "SVD done..." << std::endl;
 		cudaFree(dev_svd_s);
 		//Compute U x V_tr to get R
 		float* dev_svd_v_tr;
@@ -274,38 +363,72 @@ namespace NaiveGPU {
 		checkCUDAErrorWithLine("cudaMalloc dev_to_svd failed!");
 		transpose << <numBlocks2, blockSize >> > (dev_svd_v, dev_svd_v_tr, 3, 3);
 
+		float* v_tr = (float*)malloc(3 * 3 * sizeof(float));
+		cudaMemcpy(v_tr, dev_svd_v_tr, sizeof(float) * 9, cudaMemcpyDeviceToHost);
+		std::cout << "V TR : \n";
+		printMatrix(v_tr, 3, 3);
+		std::cout << std::endl;
+
 		cudaFree(dev_svd_v);
+		std::cout << "Computing R..." << std::endl;
 
-		gpu_blas_mmul(handle, dev_svd_u, dev_svd_v_tr, dev_R, 3, 3, 3);
+		
+		dimGrid.x = (3 + dimBlock.x - 1) / dimBlock.x;
+		dimGrid.y = (3 + dimBlock.y - 1) / dimBlock.y;
+		kernMatrixMultiply << <dimGrid, dimBlock >> > (dev_svd_u, dev_svd_v_tr, dev_R, 3, 3, 3);
 
+		//gpu_blas_mmul(handle, dev_svd_u, dev_svd_v_tr, dev_R, 3, 3, 3);
+
+		float* R = (float*)malloc(3 * 3 * sizeof(float));
+		cudaMemcpy(R, dev_R, sizeof(float) * 9, cudaMemcpyDeviceToHost);
+		std::cout << "R : \n";
+		printMatrix(R, 3, 3);
+		std::cout << std::endl;
+
+		std::cout << "R done..." << std::endl;
 		//Compute translation = x_corr_mean - R.x_mean
 		float* dev_x_mean;
 		cudaMalloc((void**)&dev_x_mean, 3 * sizeof(float));
-		dev_x_mean[0] = *meanX;
-		dev_x_mean[1] = *meanY;
-		dev_x_mean[2] = *meanZ;
+		setValueOnDevice << <1, 1 >> > (&dev_x_mean[0], meanX);
+		setValueOnDevice << <1, 1 >> > (&dev_x_mean[1], meanY);
+		setValueOnDevice << <1, 1 >> > (&dev_x_mean[2], meanZ);
 
 		float* dev_y_mean;
 		cudaMalloc((void**)&dev_y_mean, 3 * sizeof(float));
-		dev_y_mean[0] = *meanXC;
-		dev_y_mean[1] = *meanYC;
-		dev_y_mean[2] = *meanZC;
+		setValueOnDevice << <1, 1 >> > (&dev_y_mean[0], meanXC);
+		setValueOnDevice << <1, 1 >> > (&dev_y_mean[1], meanYC);
+		setValueOnDevice << <1, 1 >> > (&dev_y_mean[2], meanZC);
 
+		std::cout << "Computing translation..." << std::endl;
 		float* inter;
 		cudaMalloc((void**)&inter, 3 * 1 * sizeof(float));
-		gpu_blas_mmul(handle, dev_R, dev_x_mean, inter, 3, 3, 1);
+		dimGrid.x = (3 + dimBlock.x - 1) / dimBlock.x;
+		dimGrid.y = (1 + dimBlock.y - 1) / dimBlock.y;
+		kernMatrixMultiply << <dimGrid, dimBlock >> > (dev_R, dev_x_mean, inter, 3, 3, 1);
+		//gpu_blas_mmul(handle, dev_R, dev_x_mean, inter, 3, 3, 1);
 
 		matrix_subtraction << <numBlocks3, blockSize >> > (dev_y_mean, inter, dev_translation, 1, 3);
 
+		std::cout << "Applying transformation on x..." << std::endl;
+		float* dev_R_tr;
+		cudaMalloc((void**)&dev_R_tr, 9 * sizeof(float));
+		checkCUDAErrorWithLine("cudaMalloc dev_x failed!");
+		transpose << <numBlocks2, blockSize >> > (dev_R, dev_R_tr, eachX, 3);
 		//Apply rotation on x
 		float* dev_newX;
 		cudaMalloc((void**)&dev_newX, numX * sizeof(float));
-		gpu_blas_mmul(handle, dev_x, dev_R, dev_newX, eachX, 3, 3);
+		dimGrid.x = (eachX + dimBlock.x - 1) / dimBlock.x;
+		dimGrid.y = (3 + dimBlock.y - 1) / dimBlock.y;
+		kernMatrixMultiply << <dimGrid, dimBlock >> > (dev_x, dev_R_tr, dev_newX, eachX, 3, 3);
+		//gpu_blas_mmul(handle, dev_x, dev_R, dev_newX, eachX, 3, 3);
+		cudaDeviceSynchronize();
 
 		//Apply translation on x
 		addTranslation << <numBlocks, blockSize >> > (dev_newX, dev_translation, eachX);
 
 		cudaMemcpy(x, dev_newX, sizeof(float) * numX, cudaMemcpyDeviceToHost);
+		std::cout << "x[0] = " << x[0] << " x[1] = " << x[1] << " x[2] = " << x[2] << std::endl;
+		cudaDeviceSynchronize();
 	}
 }
 
