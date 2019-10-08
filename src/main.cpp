@@ -28,8 +28,8 @@
 #define UNIFORM_GRID 1
 #define COHERENT_GRID 0
 
-const int CPU = 0;
-const int NAIVE_GPU = 1;
+const int CPU = 1;
+const int NAIVE_GPU = 0;
 
 // LOOK-1.2 - change this to adjust particle count in the simulation
 int N_FOR_VIS = 0;

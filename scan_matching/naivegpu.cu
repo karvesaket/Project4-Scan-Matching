@@ -413,12 +413,12 @@ namespace NaiveGPU {
 		float* dev_R_tr;
 		cudaMalloc((void**)&dev_R_tr, 9 * sizeof(float));
 		checkCUDAErrorWithLine("cudaMalloc dev_x failed!");
-		transpose << <numBlocks2, blockSize >> > (dev_R, dev_R_tr, eachX, 3);
+		transpose << <numBlocks2, blockSize >> > (dev_R, dev_R_tr, 3, 3);
 		//Apply rotation on x
 		float* dev_newX;
 		cudaMalloc((void**)&dev_newX, numX * sizeof(float));
-		dimGrid.x = (eachX + dimBlock.x - 1) / dimBlock.x;
-		dimGrid.y = (3 + dimBlock.y - 1) / dimBlock.y;
+		dimGrid.x = (3 + dimBlock.x - 1) / dimBlock.x;
+		dimGrid.y = (eachX + dimBlock.y - 1) / dimBlock.y;
 		kernMatrixMultiply << <dimGrid, dimBlock >> > (dev_x, dev_R_tr, dev_newX, eachX, 3, 3);
 		//gpu_blas_mmul(handle, dev_x, dev_R, dev_newX, eachX, 3, 3);
 		cudaDeviceSynchronize();
