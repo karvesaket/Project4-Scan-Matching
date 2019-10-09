@@ -15,50 +15,66 @@
 #include <thrust/sort.h>
 #include <thrust/execution_policy.h>
 
+
 #define checkCUDAErrorWithLine(msg) checkCUDAError(msg, __LINE__)
 
 #define blockSize 128
 
+__device__ glm::vec3 getClosestPointKDTree(glm::vec4* tree, int num, glm::vec3 target_point) {
 
-__global__ void convertToVec3(float* arr, glm::vec4* arr_new, int num) {
+}
+
+__global__ void findCorrespondenceKDTree(float* arr1, long numArr1, glm::vec4* arr2, long numArr2, float* arr1_correspondence) {
 	const int index = blockIdx.x * blockDim.x + threadIdx.x;
-	if (index >= num) {
+	if (index >= (numArr1 / 3)) {
 		return;
 	}
-	arr_new[index] = glm::vec4(arr[index * 3 + 0], arr[index * 3 + 1], arr[index * 3 + 2], 1.0f);
+	glm::vec3 point(arr1[index * 3 + 0], arr1[index * 3 + 1], arr1[index * 3 + 2]);
+	float min_dist = LONG_MAX;
+	glm::vec3 closest_point = getClosestPointKDTree(arr2, numArr2, point);
+
+	arr1_correspondence[index * 3 + 0] = closest_point.x;
+	arr1_correspondence[index * 3 + 1] = closest_point.y;
+	arr1_correspondence[index * 3 + 2] = closest_point.z;
+}
+
+void convertToVec3(float* arr, glm::vec4* arr_new, int num) {
+	for (int i = 0; i < num; i++) {
+		arr_new[i] = glm::vec4(arr[i * 3 + 0], arr[i * 3 + 1], arr[i * 3 + 2], 1.0f);
+	}
 	//printf("HERE %f\n", arr_new[index]);
 }
 
 struct XComp {
-	__host__ __device__ inline bool operator() (const glm::vec4 a, const glm::vec4 b) {
+	inline bool operator() (const glm::vec4 a, const glm::vec4 b) {
 		return a.x < b.x;
 	}
 };
 
 struct YComp {
-	__host__ __device__ inline bool operator() (const glm::vec4 a, const glm::vec4 b) {
+	inline bool operator() (const glm::vec4 a, const glm::vec4 b) {
 		return a.y < b.y;
 	}
 };
 
 struct ZComp {
-	__host__ __device__ inline bool operator() (const glm::vec4 a, const glm::vec4 b) {
+	inline bool operator() (const glm::vec4 a, const glm::vec4 b) {
 		return a.z < b.z;
 	}
 };
 
-__device__ void buildKdTreeRecursive(glm::vec4* points, int beg, int end, int align, int root, glm::vec4* tree) {
+void buildKdTreeRecursive(glm::vec4* points, int beg, int end, int align, int root, glm::vec4* tree) {
 	//Sort the array from beg to end based on its alignment
 	//thrust::device_ptr<glm::vec4> thrust_points(points);
 	if (beg > end) return;
 	if (align == 0) {
-		thrust::sort(thrust::device, points + beg, points + end, XComp());
+		thrust::sort(thrust::host, points + beg, points + end, XComp());
 	}
 	else if (align == 1) {
-		thrust::sort(thrust::device, points + beg, points + end, YComp());
+		thrust::sort(thrust::host, points + beg, points + end, YComp());
 	}
 	else if (align == 2) {
-		thrust::sort(thrust::device, points + beg, points + end, ZComp());
+		thrust::sort(thrust::host, points + beg, points + end, ZComp());
 	}
 	int mid = (beg + end) / 2;
 	tree[root] = points[mid];
@@ -69,13 +85,9 @@ __device__ void buildKdTreeRecursive(glm::vec4* points, int beg, int end, int al
 	buildKdTreeRecursive(points, mid + 1, end, (align + 1) % 3, 2 * root + 2, tree);
 }
 
-__global__ void getKdTree(glm::vec4* tree, glm::vec4* points, int num) {
+void getKdTree(glm::vec4* tree, glm::vec4* points, int num) {
+	std::cout << "here\n";
 	buildKdTreeRecursive(points, 0, num-1, 0, 0, tree);
-}
-
-__global__ void printKernel(glm::vec4* to_print) {
-	printf("here\n");
-	printf("Here %f %f %f %f\n", to_print[0].x, to_print[0].y, to_print[0].z, to_print[0].w);
 }
 
 void printVec4(glm::vec4* print, int num) {
@@ -88,8 +100,8 @@ void printVec4(glm::vec4* print, int num) {
 namespace KDTreeGPU {
 	float* dev_x;
 	float* dev_y;
-	glm::vec4* dev_y_vec3;
-	glm::vec4* dev_tree;
+	glm::vec4* y_vec3;
+	glm::vec4* tree;
 
 	float* dev_x_corr;
 	float* dev_R;
@@ -98,39 +110,18 @@ namespace KDTreeGPU {
 	void buildTree(float* points, int num) {
 		//Convert float array to array of vec3
 		int each = num / 3;
-		std::cout << "Converting to vec3 array \n";
-		cudaMalloc((void**)&dev_y_vec3, each * sizeof(glm::vec4));
-		checkCUDAErrorWithLine("cudaMalloc dev_y failed!");
+		y_vec3 = (glm::vec4*)malloc(each * sizeof(glm::vec4));
+		std::cout << "Converting to vec3\n";
+		convertToVec3 (points, y_vec3, each);
+		printVec4(y_vec3, each);
 
-		cudaMalloc((void**)&dev_y, num * sizeof(float));
-		checkCUDAErrorWithLine("cudaMalloc dev_y failed!");
-		cudaMemcpy(dev_y, points, sizeof(float) * num, cudaMemcpyHostToDevice);
-
-		dim3 numBlocks((each + blockSize - 1) / blockSize);
-		convertToVec3 << <numBlocks, blockSize >> > (dev_y, dev_y_vec3, each);
-
-		cudaFree(dev_y);
-
-		std::cout << "Original points: " << points[0] << " " << points[1] << " " << points[2] << std::endl;
-		//cudaDeviceSynchronize();
-		std::cout << "IN DEVICE: \n";
-		printKernel << <1, 1 >> > (dev_y_vec3);
-		cudaDeviceSynchronize();
-		glm::vec4 *sm = (glm::vec4*)malloc(each * sizeof(glm::vec4));
-		cudaMemcpy(sm, dev_y_vec3, each  * sizeof(glm::vec4), cudaMemcpyDeviceToHost);
-		std::cout << "Converted points: " << sm[0].x << " " << sm[0].y << " " << sm[0].z <<" "<<sm[0].w<< std::endl;
-		
 		std::cout << "Building Tree\n";
 		//Call recursive device function to build tree
-		int treeSize = 1 << ilog2ceil(num);
-		std::cout << "num = " << num / 3 << " tree size = " << treeSize << std::endl;
-		cudaMalloc((void**)&dev_tree, treeSize * sizeof(glm::vec4));
-		checkCUDAErrorWithLine("cudaMalloc dev_tree failed!");
-		getKdTree << <1, 1 >> > (dev_tree, dev_y_vec3, each);
-
-		glm::vec4 *tr = (glm::vec4*)malloc(treeSize * sizeof(glm::vec4));
-		cudaMemcpy(tr, dev_tree, each * sizeof(glm::vec4), cudaMemcpyDeviceToHost);
-		printVec4(tr, treeSize);
+		int treeSize = 1 << (ilog2ceil(each) + 1);
+		std::cout << num << " " << treeSize << std::endl;
+		tree = (glm::vec4*)malloc(treeSize * sizeof(glm::vec4));
+		getKdTree(tree, y_vec3, each);
+		printVec4(tree, treeSize);
 
 	}
 

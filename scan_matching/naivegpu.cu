@@ -400,6 +400,12 @@ namespace NaiveGPU {
 		setValueOnDevice << <1, 1 >> > (&dev_y_mean[2], meanZC);
 
 		std::cout << "Computing translation..." << std::endl;
+
+		float* dev_R_tr;
+		cudaMalloc((void**)&dev_R_tr, 9 * sizeof(float));
+		checkCUDAErrorWithLine("cudaMalloc dev_x failed!");
+		transpose << <numBlocks2, blockSize >> > (dev_R, dev_R_tr, 3, 3);
+
 		float* inter;
 		cudaMalloc((void**)&inter, 3 * 1 * sizeof(float));
 		dimGrid.x = (3 + dimBlock.x - 1) / dimBlock.x;
@@ -409,11 +415,14 @@ namespace NaiveGPU {
 
 		matrix_subtraction << <numBlocks3, blockSize >> > (dev_y_mean, inter, dev_translation, 1, 3);
 
+		float* trans = (float*)malloc(3 * 1 * sizeof(float));
+		cudaMemcpy(trans, dev_translation, sizeof(float) * 3, cudaMemcpyDeviceToHost);
+		std::cout << "translation : \n";
+		printMatrix(trans, 3, 1);
+		std::cout << std::endl;
+
 		std::cout << "Applying transformation on x..." << std::endl;
-		float* dev_R_tr;
-		cudaMalloc((void**)&dev_R_tr, 9 * sizeof(float));
-		checkCUDAErrorWithLine("cudaMalloc dev_x failed!");
-		transpose << <numBlocks2, blockSize >> > (dev_R, dev_R_tr, 3, 3);
+		
 		//Apply rotation on x
 		float* dev_newX;
 		cudaMalloc((void**)&dev_newX, numX * sizeof(float));

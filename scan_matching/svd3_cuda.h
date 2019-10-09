@@ -26,13 +26,25 @@
 #include <cuda.h>
 #include "math.h" // CUDA math library
 
-
+/* This is rsqrt with an additional step of the Newton iteration, for
+increased accuracy. The constant 0x5f37599e makes the relative error
+range from 0 to -0.00000463.
+   You can't balance the error by adjusting the constant. */
+__host__ __device__ inline float rsqrt1(float x) {
+	float xhalf = 0.5f*x;
+	int i = *(int *)&x;          // View x as an int.
+	i = 0x5f37599e - (i >> 1);   // Initial guess.
+	x = *(float *)&i;            // View i as float.
+	x = x * (1.5f - xhalf * x*x);    // Newton step.
+	x = x * (1.5f - xhalf * x*x);    // Newton step again.
+	return x;
+}
 // CUDA's rsqrt seems to be faster than the inlined approximation?
 
 __host__ __device__ __forceinline__
 float accurateSqrt(float x)
 {
-    return x * rsqrt(x);
+    return x * rsqrt1(x);
 }
 
 __host__ __device__ __forceinline__
@@ -129,7 +141,7 @@ void approximateGivensQuaternion(float a11, float a12, float a22, float &ch, flo
     ch = 2*(a11-a22);
     sh = a12;
     bool b = _gamma*sh*sh < ch*ch;
-    float w = rsqrt(ch*ch+sh*sh);
+    float w = rsqrt1(ch*ch+sh*sh);
     ch=b?w*ch:_cstar;
     sh=b?w*sh:_sstar;
 }
@@ -258,7 +270,7 @@ void QRGivensQuaternion(float a1, float a2, float &ch, float &sh)
     ch = fabs(a1) + fmax(rho,epsilon);
     bool b = a1 < 0;
     condSwap(b,sh,ch);
-    float w = rsqrt(ch*ch+sh*sh);
+    float w = rsqrt1(ch*ch+sh*sh);
     ch *= w;
     sh *= w;
 }

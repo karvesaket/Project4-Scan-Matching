@@ -30,8 +30,8 @@
 #define COHERENT_GRID 0
 
 const int CPU = 0;
-const int NAIVE_GPU = 0;
-const int KDTREE_GPU = 1;
+const int NAIVE_GPU = 1;
+const int KDTREE_GPU = 0;
 
 // LOOK-1.2 - change this to adjust particle count in the simulation
 int N_FOR_VIS = 0;
@@ -193,8 +193,9 @@ bool init(int argc, char **argv, float* x, float* y, int numX, int numY) {
   // Initialize N-body simulation
   Boids::initSimulation(x, y, numX, numY);
   if (KDTREE_GPU == 1) {
-	  float sample[] = {4, 6, -3, -2, 0, 1, -4, 2, 5, 7, 8, 9};
-	  KDTreeGPU::buildTree(&sample[0], 12);
+	  //float sample[] = {4, 6, -3, -2, 0, 1, -4, 2, 5, 7, 8, 9};
+	  KDTreeGPU::buildTree(y, numY);
+	  //KDTreeGPU::buildTree(&sample[0], 12);
   }
 
   updateCamera();
