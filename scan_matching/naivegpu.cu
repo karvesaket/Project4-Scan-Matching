@@ -8,10 +8,10 @@
 #include <fstream>
 #include <glm/glm.hpp>
 #include <cublas_v2.h>
-#include "svd3_cuda.h"
 #include <thrust\host_vector.h>
 #include <thrust\device_vector.h>
 #include <thrust\reduce.h>
+#include "svd3.h"
 
 #define checkCUDAErrorWithLine(msg) checkCUDAError(msg, __LINE__)
 
@@ -124,26 +124,26 @@ __global__ void upSweepOptimized(int n, int d, float* A) {
 	A[new_index + stride - 1] += A[new_index + other_index - 1];
 }
 
-__global__ void meanCenter(float* arr, int num, float mx, float my, float mz) {
+__global__ void meanCenter(float* arr, float* centered, int num, float mx, float my, float mz) {
 	const int index = blockIdx.x * blockDim.x + threadIdx.x;
 	if (index >= num) {
 		return;
 	}
-	arr[index * 3 + 0] -= mx;
-	arr[index * 3 + 1] -= my;
-	arr[index * 3 + 2] -= mz;
+	centered[index * 3 + 0] = arr[index * 3 + 0] - mx;
+	centered[index * 3 + 1] = arr[index * 3 + 1] - my;
+	centered[index * 3 + 2] = arr[index * 3 + 2] - mz;
 }
 
 __global__ void setValueOnDevice(float* device_var, float val) {
 	*device_var = val;
 }
 
-__global__ void get_svd(float* input, float* u, float* s, float* v) {
-	svd(input[0], input[1], input[2], input[3], input[4], input[5], input[6], input[7], input[8],
-		u[0], u[1], u[2], u[3], u[4], u[5], u[6], u[7], u[8],
-		s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7], s[8],
-		v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8]);
-}
+//__global__ void get_svd(float* input, float* u, float* s, float* v) {
+//	svd(input[0], input[1], input[2], input[3], input[4], input[5], input[6], input[7], input[8],
+//		u[0], u[1], u[2], u[3], u[4], u[5], u[6], u[7], u[8],
+//		s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7], s[8],
+//		v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7], v[8]);
+//}
 
 __global__ void divide_sum_to_mean(float* sum, int num) {
 	(*sum) = (*sum) / num;
@@ -224,9 +224,9 @@ namespace NaiveGPU {
 		checkCUDAErrorWithLine("cudaMalloc dev_y failed!");
 		cudaMemcpy(dev_y, y, sizeof(float) * numY, cudaMemcpyHostToDevice);
 
-		std::cout << "Computing correspondence gpu..." << std::endl;
+		
 		//Find correspondence
-		std::cout << "x[0] = " << x[0] << " x[1] = " << x[1] << " x[2] = " << x[2] << std::endl;
+		
 		//Find Correspondence
 		findCorrespondence << <numBlocks, blockSize >> >(dev_x, numX, dev_y, numY, dev_x_corr);
 
@@ -241,7 +241,7 @@ namespace NaiveGPU {
 		checkCUDAErrorWithLine("cudaMalloc dev_x failed!");
 		transpose << <numBlocks1, blockSize >> >(dev_x_corr, dev_x_corr_tr, eachX, 3);
 
-		std::cout << "Mean Centering x..." << std::endl;
+		
 		float meanX;
 		meanX = thrust::reduce(thrust::device, dev_x_tr, dev_x_tr + eachX, 0.0f);
 		meanX /= eachX;
@@ -255,11 +255,11 @@ namespace NaiveGPU {
 		meanZ /= eachX;
 		
 
-		std::cout << "xm[0] = " << meanX << " xm[1] = " << meanY << " xm[2] = " << meanZ << std::endl;
+		
 		
 		cudaFree(dev_x_tr);
 
-		std::cout << "Mean Centering  x_corr..." << std::endl;
+		
 		//Mean-center x_corr
 		float meanXC;
 		meanXC = thrust::reduce(thrust::device, dev_x_corr_tr, dev_x_corr_tr + eachX, 0.0f);
@@ -274,28 +274,32 @@ namespace NaiveGPU {
 		meanZC /= eachX;
 		
 
-		std::cout << "xm[0] = " << meanXC << " xm[1] = " << meanYC << " xm[2] = " << meanZC << std::endl;
+		
 
 		cudaFree(dev_x_corr_tr);
 
-		std::cout << "x..." << std::endl;
-		meanCenter <<<numBlocks, blockSize >>>(dev_x, eachX, meanX, meanY, meanZ);
-		std::cout << "x_corr..." << std::endl;
-		meanCenter <<<numBlocks, blockSize >>>(dev_x_corr, eachX, meanXC, meanYC, meanZC);
+		float* dev_x_mean_center;
+		cudaMalloc((void**)&dev_x_mean_center, numX * sizeof(float));
+		checkCUDAErrorWithLine("cudaMalloc dev_x failed!");
+		
 
-		std::cout << "Computing input to SVD..." << std::endl;
+		float* dev_x_corr_mean_center;
+		cudaMalloc((void**)&dev_x_corr_mean_center, numX * sizeof(float));
+		checkCUDAErrorWithLine("cudaMalloc dev_y failed!");
+		
+
+		
+		meanCenter <<<numBlocks, blockSize >>>(dev_x, dev_x_mean_center, eachX, meanX, meanY, meanZ);
+		
+		meanCenter <<<numBlocks, blockSize >>>(dev_x_corr, dev_x_corr_mean_center, eachX, meanXC, meanYC, meanZC);
+
+		
 		//Multiply x_corr_tr and x to get input to SVD
 		cudaMalloc((void**)&dev_x_corr_tr, numX * sizeof(float));
 		checkCUDAErrorWithLine("cudaMalloc dev_x failed!");
-		transpose << <numBlocks1, blockSize >> > (dev_x_corr, dev_x_corr_tr, eachX, 3);
+		transpose << <numBlocks1, blockSize >> > (dev_x_corr_mean_center, dev_x_corr_tr, eachX, 3);
 
-		float* x_cpu = (float*)malloc(numX * sizeof(float));
-		cudaMemcpy(x_cpu, dev_x, sizeof(float) * numX, cudaMemcpyDeviceToHost);
-		std::cout << "X : \n";
-
-
-		float* y_tr_cpu = (float*)malloc(numX * sizeof(float));
-		cudaMemcpy(y_tr_cpu, dev_x_corr_tr, sizeof(float) * numX, cudaMemcpyDeviceToHost);
+		
 		
 
 		float* dev_to_svd;
@@ -310,7 +314,7 @@ namespace NaiveGPU {
 
 		dimGrid.x = (3 + dimBlock.x - 1) / dimBlock.x;
 		dimGrid.y = (3 + dimBlock.y - 1) / dimBlock.y;
-		kernMatrixMultiply << <dimGrid, dimBlock >> > (dev_x_corr_tr, dev_x, dev_to_svd, 3, eachX, 3);
+		kernMatrixMultiply << <dimGrid, dimBlock >> > (dev_x_corr_tr, dev_x_mean_center, dev_to_svd, 3, eachX, 3);
 
 		// Create a handle for CUBLAS
 		cublasHandle_t handle;
@@ -320,11 +324,21 @@ namespace NaiveGPU {
 
 		
 		cudaMemcpy(to_svd, dev_to_svd, sizeof(float) * 9, cudaMemcpyDeviceToHost);
-		std::cout << "Input to SVD : \n";
-		printMatrix(to_svd, 3, 3);
-		std::cout << std::endl;
+		
 
-		std::cout << "SVD..." << std::endl;
+		float* svd_u = (float*)malloc(3 * 3 * sizeof(float));
+		memset(svd_u, 0.0f, 3 * 3 * sizeof(float));
+		float* svd_v = (float*)malloc(3 * 3 * sizeof(float));
+		memset(svd_v, 0.0f, 3 * 3 * sizeof(float));
+		float* svd_s = (float*)malloc(3 * 3 * sizeof(float));
+		memset(svd_s, 0.0f, 3 * 3 * sizeof(float));
+
+		svd(to_svd[0], to_svd[1], to_svd[2], to_svd[3], to_svd[4], to_svd[5], to_svd[6], to_svd[7], to_svd[8],
+			svd_u[0], svd_u[1], svd_u[2], svd_u[3], svd_u[4], svd_u[5], svd_u[6], svd_u[7], svd_u[8],
+			svd_s[0], svd_s[1], svd_s[2], svd_s[3], svd_s[4], svd_s[5], svd_s[6], svd_s[7], svd_s[8],
+			svd_v[0], svd_v[1], svd_v[2], svd_v[3], svd_v[4], svd_v[5], svd_v[6], svd_v[7], svd_v[8]);
+
+		
 		//Find SVD - U, V, S
 		float* dev_svd_u;
 		cudaMalloc((void**)&dev_svd_u, 3 * 3 * sizeof(float));
@@ -341,21 +355,17 @@ namespace NaiveGPU {
 		cudaMemset(dev_svd_v, 0.0f, 3 * 3 * sizeof(float));
 		checkCUDAErrorWithLine("cudaMalloc dev_to_svd failed!");
 
-		get_svd << <1, 1 >> > (dev_to_svd, dev_svd_u, dev_svd_s, dev_svd_v);
+		//get_svd << <1, 1 >> > (dev_to_svd, dev_svd_u, dev_svd_s, dev_svd_v);
 
-		float* u = (float*)malloc(3 * 3 * sizeof(float));
-		cudaMemcpy(u, dev_svd_u, sizeof(float) * 9, cudaMemcpyDeviceToHost);
-		std::cout << "U : \n";
-		printMatrix(u, 3, 3);
-		std::cout << std::endl;
+		//float* u = (float*)malloc(3 * 3 * sizeof(float));
+		cudaMemcpy(dev_svd_u, svd_u, sizeof(float) * 9, cudaMemcpyHostToDevice);
+		
 
-		float* v = (float*)malloc(3 * 3 * sizeof(float));
-		cudaMemcpy(v, dev_svd_v, sizeof(float) * 9, cudaMemcpyDeviceToHost);
-		std::cout << "V : \n";
-		printMatrix(v, 3, 3);
-		std::cout << std::endl;
+		//float* v = (float*)malloc(3 * 3 * sizeof(float));
+		cudaMemcpy(dev_svd_v, svd_v, sizeof(float) * 9, cudaMemcpyHostToDevice);
+		
 
-		std::cout << "SVD done..." << std::endl;
+		
 		cudaFree(dev_svd_s);
 		//Compute U x V_tr to get R
 		float* dev_svd_v_tr;
@@ -365,12 +375,10 @@ namespace NaiveGPU {
 
 		float* v_tr = (float*)malloc(3 * 3 * sizeof(float));
 		cudaMemcpy(v_tr, dev_svd_v_tr, sizeof(float) * 9, cudaMemcpyDeviceToHost);
-		std::cout << "V TR : \n";
-		printMatrix(v_tr, 3, 3);
-		std::cout << std::endl;
+		
 
 		cudaFree(dev_svd_v);
-		std::cout << "Computing R..." << std::endl;
+		
 
 		
 		dimGrid.x = (3 + dimBlock.x - 1) / dimBlock.x;
@@ -381,11 +389,9 @@ namespace NaiveGPU {
 
 		float* R = (float*)malloc(3 * 3 * sizeof(float));
 		cudaMemcpy(R, dev_R, sizeof(float) * 9, cudaMemcpyDeviceToHost);
-		std::cout << "R : \n";
-		printMatrix(R, 3, 3);
-		std::cout << std::endl;
+		
 
-		std::cout << "R done..." << std::endl;
+		
 		//Compute translation = x_corr_mean - R.x_mean
 		float* dev_x_mean;
 		cudaMalloc((void**)&dev_x_mean, 3 * sizeof(float));
@@ -399,7 +405,7 @@ namespace NaiveGPU {
 		setValueOnDevice << <1, 1 >> > (&dev_y_mean[1], meanYC);
 		setValueOnDevice << <1, 1 >> > (&dev_y_mean[2], meanZC);
 
-		std::cout << "Computing translation..." << std::endl;
+		
 
 		float* dev_R_tr;
 		cudaMalloc((void**)&dev_R_tr, 9 * sizeof(float));
@@ -417,11 +423,9 @@ namespace NaiveGPU {
 
 		float* trans = (float*)malloc(3 * 1 * sizeof(float));
 		cudaMemcpy(trans, dev_translation, sizeof(float) * 3, cudaMemcpyDeviceToHost);
-		std::cout << "translation : \n";
-		printMatrix(trans, 3, 1);
-		std::cout << std::endl;
+		
 
-		std::cout << "Applying transformation on x..." << std::endl;
+		
 		
 		//Apply rotation on x
 		float* dev_newX;
@@ -436,7 +440,7 @@ namespace NaiveGPU {
 		addTranslation << <numBlocks, blockSize >> > (dev_newX, dev_translation, eachX);
 
 		cudaMemcpy(x, dev_newX, sizeof(float) * numX, cudaMemcpyDeviceToHost);
-		std::cout << "x[0] = " << x[0] << " x[1] = " << x[1] << " x[2] = " << x[2] << std::endl;
+		
 		cudaDeviceSynchronize();
 	}
 }

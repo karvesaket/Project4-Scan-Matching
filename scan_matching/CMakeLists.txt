@@ -8,7 +8,6 @@ set(SOURCE_FILES
 	"kdtreegpu.cu"
 	"kdtreegpu.h"
 	"svd3.h"
-	"svd3_cuda.h"
     )
 
 cuda_add_library(scan_matching

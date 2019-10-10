@@ -29,8 +29,8 @@
 #define UNIFORM_GRID 1
 #define COHERENT_GRID 0
 
-const int CPU = 0;
-const int NAIVE_GPU = 1;
+const int CPU = 1;
+const int NAIVE_GPU = 0;
 const int KDTREE_GPU = 0;
 
 // LOOK-1.2 - change this to adjust particle count in the simulation
@@ -46,17 +46,18 @@ int main(int argc, char* argv[]) {
   projectName = "565 CUDA Scan Matching";
 
   // Read the two point clouds from a file
-  std::string data_directory = "../data/";
+  //std::string data_directory = "../data/";
 
-  std::string filename1 = "bun045.ply";
+  //std::string filename1 = "bun045.ply";
+  std::string filename1 = argv[1];
   long numX;
-  float* x = parsePly(data_directory + filename1, &numX);
+  float* x = parsePly(filename1, &numX);
   std::cout << "x[0] = " << x[0] << std::endl;
   std::cout << "Num X = " << numX << std::endl;
 
-  std::string filename2 = "bun000.ply";
+  std::string filename2 = argv[2];
   long numY;
-  float* y = parsePly(data_directory + filename2, &numY);
+  float* y = parsePly(filename2, &numY);
   std::cout << "y[0] = " << y[0] << std::endl;
   std::cout << "Num Y = " << numY << std::endl;
   N_FOR_VIS = numX + numY;
@@ -325,7 +326,7 @@ void initShaders(GLuint * program) {
         frame = 0;
       }
 	  iter++;
-	  if (iter > 100) break;
+	  if (iter > 10000) break;
       runCUDA(x, y, numX, numY);
 
       std::ostringstream ss;

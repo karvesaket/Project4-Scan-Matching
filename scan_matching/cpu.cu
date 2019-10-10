@@ -36,7 +36,7 @@ namespace ScanMatching {
 		}
 	}
 
-	glm::vec3 meanCenter(float* arr, int num) {
+	glm::vec3 meanCenter(float* arr, float* centered, int num) {
 		float meanX = 0.0f;
 		float meanY = 0.0f;
 		float meanZ = 0.0f;
@@ -52,9 +52,9 @@ namespace ScanMatching {
 		meanZ = 3.0f * meanZ / num;
 
 		for (int i = 0; i < num / 3; i++) {
-			arr[i * 3 + 0] -= meanX;
-			arr[i * 3 + 1] -= meanY;
-			arr[i * 3 + 2] -= meanZ;
+			centered[i * 3 + 0] = arr[i * 3 + 0] - meanX;
+			centered[i * 3 + 1] = arr[i * 3 + 1] - meanY;
+			centered[i * 3 + 2] = arr[i * 3 + 2] - meanZ;
 		}
 		return glm::vec3(meanX, meanY, meanZ);
 	}
@@ -115,42 +115,38 @@ namespace ScanMatching {
 	}
 
 	void match(float* x, float* y, int numX, int numY) {
-		std::cout << "Computing correspondence..." << std::endl;
+		
 		//Find correspondence
-		std::cout << "x[0] = " << x[0] << " x[1] = " << x[1] << " x[2] = " << x[2] << std::endl;
+		
 
 		findCorrespondence(x, numX, y, numY, x_corr);
 		//std::cout << "x[0] = " << x_corr[3] << " x[1] = " << x_corr[4] << " x[2] = " << x_corr[5] << std::endl;
-		printMatrix(x_corr, 10, 3);
+		
 
-		std::cout << "Mean centering..." << std::endl;
+		float* x_mean_centered = (float*)malloc(numX * sizeof(float));
+		float* x_corr_mean_centered = (float*)malloc(numX * sizeof(float));
+
+		
 		//Mean center x and x_corr
-		glm::vec3 x_mean = meanCenter(x, numX);
-		std::cout << "x[0] = " << x[0] << std::endl;
-		glm::vec3 x_corr_mean = meanCenter(x_corr, numX);
-		std::cout << "x_corr[0] = " << x_corr[0] << std::endl;
+		glm::vec3 x_mean = meanCenter(x, x_mean_centered, numX);
+	
+		glm::vec3 x_corr_mean = meanCenter(x_corr, x_corr_mean_centered, numX);
+		
 
-		std::cout << "Transposing..." << std::endl;
+		
 		//Transpose X_corr
 		float* x_corr_tr = (float*)malloc(numX * sizeof(float));
-		transpose(x_corr, x_corr_tr, numX / 3, 3);
+		transpose(x_corr_mean_centered, x_corr_tr, numX / 3, 3);
 
-		printMatrix(x, 10, 3);
+		
 
-		printMatrix(x_corr, 10, 3);
-
-		printMatrix(x_corr_tr, 3, 10);
-
-		std::cout << "Multiplying tfor SVD.." << std::endl;
+		
 		//Compute C_corr_tr x X
 		float* to_svd = (float*)malloc(3 * 3 * sizeof(float));
-		multiplyMatrix(x_corr_tr, x, to_svd, 3, numX / 3, 3);
+		multiplyMatrix(x_corr_tr, x_mean_centered, to_svd, 3, numX / 3, 3);
 
-		std::cout << "Input to SVD : \n";
-		printMatrix(to_svd, 3, 3);
-		std::cout << std::endl;
-
-		std::cout << "Finding SVD..." << std::endl;
+		
+		
 		float* svd_u = (float*)malloc(3 * 3 * sizeof(float));
 		memset(svd_u, 0.0f, 3 * 3 * sizeof(float));
 		float* svd_v = (float*)malloc(3 * 3 * sizeof(float));
@@ -163,26 +159,15 @@ namespace ScanMatching {
 			svd_s[0], svd_s[1], svd_s[2], svd_s[3], svd_s[4], svd_s[5], svd_s[6], svd_s[7], svd_s[8],
 			svd_v[0], svd_v[1], svd_v[2], svd_v[3], svd_v[4], svd_v[5], svd_v[6], svd_v[7], svd_v[8]);
 
-		std::cout << "SVD U: \n";
-		printMatrix(svd_u, 3, 3);
-		std::cout << std::endl;
-
-		std::cout << "SVD V: \n";
-		printMatrix(svd_v, 3, 3);
-		std::cout << std::endl;
-
-		std::cout << "Computing rotation matrix..." << std::endl;
+		
+		
 		//Compute U x V_tr to get rotation matrix
 		float* v_tr = (float*)malloc(3 * 3 * sizeof(float));
 		transpose(svd_v, v_tr, 3, 3);
-		std::cout << "SVD V Transpose: \n";
-		printMatrix(v_tr, 3, 3);
-		std::cout << std::endl;
+		
 
 		multiplyMatrix(svd_u, v_tr, R, 3, 3, 3);
-		std::cout << "Rotation matrix: \n";
-		printMatrix(R, 3, 3);
-		std::cout << std::endl;
+		
 
 		float* R_tr = (float*)malloc(9 * sizeof(float));
 		transpose(R, R_tr, 3, 3);
@@ -191,26 +176,22 @@ namespace ScanMatching {
 		float* inter = (float*)malloc(3 * 1 * sizeof(float));
 		float x_mean_arr[] = { x_mean.x, x_mean.y, x_mean.z };
 
-		std::cout << "X Mean ";
-		printMatrix(x_mean_arr, 1, 3);
-		std::cout << std::endl;
+		
 
 		multiplyMatrix(R, x_mean_arr, inter, 3, 3, 1);
 
-		std::cout << "Computing translaton matrix..." << std::endl;
+		
 		//Compute Translation = x_corr_mean - R * x_mean
 		float y_mean_arr[] = { x_corr_mean.x, x_corr_mean.y, x_corr_mean.z };
 
-		std::cout << "Y Mean ";
+		
 		printMatrix(y_mean_arr, 1, 3);
 		std::cout << std::endl;
 
-		std::cout << "Inter";
-		printMatrix(inter, 1, 3);
-		std::cout << std::endl;
+		
 
 		subtractMatrices(y_mean_arr, inter, translation, 1, 3);
-		std::cout << "Translation matrix : " << translation[0] << " " << translation[1] << " " << translation[2] << std::endl;
+		
 
 		
 
@@ -220,7 +201,7 @@ namespace ScanMatching {
 
 		//Add translation to every vertes
 		addTranslation(newX, translation, numX / 3);
-		std::cout << "x_new[0] = " << newX[0] << " x_new[1] = " << newX[1] << " x_new[2] = " << newX[2] << std::endl;
+		
 
 		//Copy updated X back
 		memcpy(x, newX, numX * sizeof(float));
