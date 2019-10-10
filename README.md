@@ -10,7 +10,7 @@ CUDA Scan Matching
 
 ### Highlights
 
-![]()
+![](img/bunny_kdtree_gpu.gif)
 
 ### Features Implemented
 
@@ -67,7 +67,7 @@ Note that you should set the other flags to 0.
 
 #### Output
 
-![]()
+![](img/bunny_cpu.gif)
 
 #### Analysis
 
@@ -77,16 +77,14 @@ The FPS measured for visualization on various data sets with different number of
 
 | Target File | Scene File | Total number of points | FPS |
 | ------------|----------- | ---------------------- | --- |
-|             |            |                        |     |
-|             |            |                        |     |
-|             |            |                        |     |
-|             |            |                        |     |
+|  bun000.ply |  bun045.ply|     74321              | 0.4    |
+|  bun0045.ply|  bun000.ply|     74321              | 0.6    |
 
 ### Naive GPU Implementation
 
 #### Output
 
-![]()
+![](img/bunny_naive_gpu.gif)
 
 #### Analysis
 
@@ -96,10 +94,8 @@ The FPS measured for visualization on various data sets with different number of
 
 | Target File | Scene File | Total number of points | FPS |
 | ------------|----------- | ---------------------- | --- |
-|             |            |                        |     |
-|             |            |                        |     |
-|             |            |                        |     |
-|             |            |                        |     |
+|  bun000.ply |  bun045.ply|    74321               |  16   |
+|  bun0045.ply|  bun000.ply|    74321               |  17.2   |
 
 
 ### KD-Tree GPU Implementation
@@ -108,18 +104,18 @@ The FPS measured for visualization on various data sets with different number of
 
 KD-Tree is a binary search tree representation for multi-dimensional data. Points inserted in a KD-Tree partition the space into various hyperplanes based on the input points. It is a very useful data structure for applications involving search over a multi-dimensional space. When the points are inserted in the KD-Tree, the k-dimensional space is partitioned as can be seen from the following figure.
 
-![]()
+![](img/3dtree.png)
 
 For finding the nearest neighbor of a given target point, the following algorithm is used,
 
-![]()
+![](img/kdtreesearch.PNG)
 [Reference](https://www.cs.cmu.edu/~ckingsf/bioinfo-lectures/kdtrees.pdf)
 
 KD-Tree has an average case time complexity of O(log n) for search. This is the main reason for the significant improvment in performance.
 
 #### Output
 
-![]()
+![](img/bunny_kdtree_gpu.gif)
 
 #### Analysis
 
@@ -127,10 +123,8 @@ The FPS measured for visualization on various data sets with different number of
 
 | Target File | Scene File | Total number of points | FPS |
 | ------------|----------- | ---------------------- | --- |
-|             |            |                        |     |
-|             |            |                        |     |
-|             |            |                        |     |
-|             |            |                        |     |
+|  bun000.ply |  bun045.ply|    74321               | 58.7     |
+|  bun0045.ply|  bun000.ply|    74321               | 59    |
 
 
 ### Performance Analysis
