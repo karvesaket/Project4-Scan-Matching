@@ -55,7 +55,7 @@ Essentially I have used only two external libraries.
 #### Running the code
 
 - CMAKE and open the ```.sln``` in Visual Studio as usual.
-- Give the command line arguments specifying the path to the scene and target pointcloud file (```.ply```) as a comma separated list. For example, ```../data/bun000.ply, ../data/bun045.ply```.
+- Give the command line arguments specifying the path to the scene and target pointcloud file (```.ply```) as a space separated list. For example, ```../data/bun000.ply ../data/bun045.ply```.
 -  To run one of the three implementations of the project, set one of the flags (in ```main.cpp```) to 1 based on what implementation you choose to run.
    - For CPU implementation, set ```CPU = 1```
    - For Naive GPU implementation, set ```NAIVE_GPU = 1```
@@ -104,6 +104,19 @@ The FPS measured for visualization on various data sets with different number of
 
 ### KD-Tree GPU Implementation
 
+#### KD-Tree
+
+KD-Tree is a binary search tree representation for multi-dimensional data. Points inserted in a KD-Tree partition the space into various hyperplanes based on the input points. It is a very useful data structure for applications involving search over a multi-dimensional space. When the points are inserted in the KD-Tree, the k-dimensional space is partitioned as can be seen from the following figure.
+
+![]()
+
+For finding the nearest neighbor of a given target point, the following algorithm is used,
+
+![]()
+[Reference](https://www.cs.cmu.edu/~ckingsf/bioinfo-lectures/kdtrees.pdf)
+
+KD-Tree has an average case time complexity of O(log n) for search. This is the main reason for the significant improvment in performance.
+
 #### Output
 
 ![]()
@@ -122,8 +135,6 @@ The FPS measured for visualization on various data sets with different number of
 
 ### Performance Analysis
 
-The following graph shows the comparison between performance for all the three implementations with increasing number of points (combined for both the pointclouds).
+The overall performance is as expected the best for the KD-Tree implementation. In general, the main performance bottleneck is when finding correspondences. The CPU and the Naive GPU implementation check for the closest point against every other point. KD-Tree implementation limits this search space by diving the region by hyperplanes so that it does not need to search through those points which the KD-Tree gives gaurantee for not being a possible candidate for the closest point. This makes the search much faster and hence leads to a faster convergence.
 
-![]()
-
-It can be clearly seen that as the number of points increases, the performance goes down. However, there the performance for CPU is much worse as compared to both the GPU implementations. The KD-Tree implementation has the best performance for overall. This is pretty much clear as we look for lesser points when finding correspondences.
+Increasing the number of points in the point clouds will lead to a drop in performance as the number of points increases.
